@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<!--
+SlopBro
+by throwaway96
+https://github.com/throwaway96/slopbro
+Copyright 2026. Licensed under AGPL v3 or later. No warranties.
+-->
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>SlopBro</title>
+    <style>
+        body {
+            background: black;
+            color: white;
+        }
+
+        #debug {
+            color: cyan;
+        }
+
+        #error {
+            color: red;
+        }
+
+        #status {
+            color: lightgreen;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>SlopBro</h1>
+    <p>by throwaway96</p>
+    <!-- TODO: Find a better way to display output -->
+    <p id="debug"></p>
+    <p id="error"></p>
+    <p id="status"></p>
+    <script>
+        (function () {
+            function getQueryParam(name) {
+                var query = location.search.substring(1);
+                var vars = query.split('&');
+                for (var i = 0; i < vars.length; i++) {
+                    var pair = vars[i].split('=');
+                    if (pair[0] === name) {
+                        // Returns undefined if there's no value
+                        return pair[1];
+                    }
+                }
+                return null;
+            }
+
+            // Get options from query parameters
+            var optDebug = getQueryParam('debug') !== null;
+            var optTelnet = getQueryParam('telnet') !== null;
+
+            var shellScriptName = (function () {
+                var rawScript = getQueryParam('script');
+
+                if (rawScript === null) {
+                    // XXX: This should be an error
+                    return '';
+                }
+
+                return rawScript;
+            })();
+
+            var files = (function () {
+                var rawFiles = getQueryParam('files');
+
+                if (rawFiles === null) {
+                    // XXX: This should be an error
+                    return [];
+                }
+
+                return rawFiles.split(';');
+            })();
+
+            var statusElem = document.getElementById('status');
+            var debugElem = document.getElementById('debug');
+            var errorElem = document.getElementById('error');
+
+            function logStatus(message) {
+                statusElem.textContent = 'Status: ' + message;
+            }
+
+            function logDebug(message) {
+                // Only show debug messages if the debug option is enabled
+                if (optDebug) {
+                    debugElem.textContent = 'Debug: ' + message;
+                }
+            }
+
+            function logError(message) {
+                errorElem.textContent = 'Error: ' + message;
+            }
+
+            function failedValidation(context, message) {
+                logError('invalid response to ' + context + ': ' + message);
+            }
+
+            function checkPropertyType(obj, context, property, type) {
+                // Check property existence
+                if (!obj.hasOwnProperty(property)) {
+                    failedValidation(context + ' (checking for ' + property + ')', 'missing property');
+                    return false;
+                }
+
+                // Check property type
+                if (typeof obj[property] !== type) {
+                    failedValidation(context + ' (checking for ' + property + ')', 'expected type ' + type + ' but got ' + typeof obj[property]);
+                    return false;
+                }
+
+                return true;
+            }
+
+            function checkValidResponse(response, context, expectedProperties) {
+                if (typeof response !== 'object') {
+                    failedValidation(context, 'expecting object');
+                    return false;
+                }
+
+                if (response === null) {
+                    failedValidation(context, 'null response');
+                    return false;
+                }
+
+                if (Array.isArray(response)) {
+                    failedValidation(context, 'unexpected array');
+                    return false;
+                }
+
+                if (expectedProperties) {
+                    for (var propName in expectedProperties) {
+                        // Ignore inherited properties
+                        if (!expectedProperties.hasOwnProperty(propName)) {
+                            continue;
+                        }
+
+                        var propType = expectedProperties[propName];
+                        if (!checkPropertyType(response, context, propName, propType)) {
+                            return false;
+                        }
+                    }
+                }
+
+                return true;
+            }
+
+            // Extracts a human-readable error message from a service response, if possible
+            function getErrorText(response) {
+                var baseGenericError = 'unknown error';
+
+                if (!response.hasOwnProperty('errorText')) {
+                    return baseGenericError + ' (no errorText)';
+                }
+
+                var errorText = response.errorText;
+
+                if (typeof errorText !== 'string') {
+                    return baseGenericError + ' (unexpected errorText type: ' + typeof errorText + ')';
+                }
+
+                if (errorText.length === 0) {
+                    return baseGenericError + ' (empty errorText)';
+                }
+
+                return errorText;
+            }
+
+            function parse(payload, context) {
+                if (typeof payload !== 'string') {
+                    logError('expected string payload' + (context ? ' for ' + context : '') + ' but got ' + typeof payload);
+                    return null;
+                }
+
+                try {
+                    return JSON.parse(payload);
+                } catch (err) {
+                    logError('failed to parse JSON payload' + (context ? ' for ' + context : '') + ': ' + err);
+                    return null;
+                }
+            }
+
+            var downloadDir = '/media/internal/downloads';
+
+            function runService() {
+                logDebug('entered runService()');
+
+                var service = new PalmServiceBridge();
+
+                var args = [];
+                if (optTelnet) args.push('--telnet');
+                if (optDebug) args.push('--debug');
+
+                var shellScriptPath = downloadDir + '/' + shellScriptName;
+
+                var requestPayload = {
+                    inputParams: "-- /tmp/run-js-service-no-cgroup ^_~ " + downloadDir + " " + shellScriptPath + " " + args.join(' ')
+                };
+                logDebug('request payload: ' + JSON.stringify(requestPayload));
+
+                service.onservicecallback = function (message) {
+                    logDebug('received message: ' + message);
+
+                    var response = parse(message, '/run response');
+                    if (response === null) {
+                        logError('received unparsable response from service: ' + message);
+                        return;
+                    }
+
+                    if (!checkValidResponse(response, '/run', { returnValue: 'boolean' })) {
+                        return;
+                    }
+
+                    if (response.returnValue !== true) {
+                        logError('service failed to start: ' + getErrorText(response));
+                        return;
+                    }
+
+                    logStatus('service launched successfully (. ❛ ᴗ ❛.)');
+                };
+
+                service.call(
+                    'luna://com.webos.service.jsserver/run',
+                    JSON.stringify(requestPayload)
+                );
+
+                logStatus('launch requested...');
+            }
+
+            function downloadFailed(file, message) {
+                logError("Error downloading " + file + ": " + message);
+            }
+
+            // Base URL for downloads is the directory of the current page
+            var href = location.href;
+            var baseUrl = href.substring(0, href.lastIndexOf("/") + 1);
+
+            function requestDownload(file, onComplete) {
+                logDebug('requesting download of ' + file + ' from ' + baseUrl + file);
+
+                var service = new PalmServiceBridge();
+
+                // XXX: I don't know if message order or existence is guaranteed
+                var subscribed = false, complete = false;
+                service.onservicecallback = function (message) {
+                    logDebug('received message: ' + message);
+
+                    if (complete) {
+                        logError('received unexpected message after download completion: ' + message);
+                        return;
+                    }
+
+                    var response = parse(message, 'download response');
+                    if (response === null) {
+                        logError('received unparsable download response: ' + message);
+                        return;
+                    }
+
+                    if (!subscribed) {
+                        // Initial response to download request
+
+                        if (!checkValidResponse(response, 'starting download of ' + file, { returnValue: 'boolean' })) {
+                            complete = true;
+                            return;
+                        }
+
+                        if (response.returnValue !== true) {
+                            downloadFailed(file, getErrorText(response));
+                            complete = true;
+                            return;
+                        }
+
+                        logStatus('download started for ' + file);
+                        subscribed = true;
+                        return;
+                    }
+
+                    if (response.hasOwnProperty('completed')) {
+                        // Final completion response
+                        complete = true;
+
+                        if (!checkValidResponse(response, 'download completion for ' + file, { completed: 'boolean', httpStatus: 'number', aborted: 'boolean', interrupted: 'boolean' })) {
+                            return;
+                        }
+
+                        if (response.completed !== true) {
+                            downloadFailed(file, 'download did not complete (?)');
+                            return;
+                        }
+
+                        if (response.aborted === true) {
+                            downloadFailed(file, 'download was aborted');
+                            return;
+                        }
+
+                        if (response.interrupted === true) {
+                            downloadFailed(file, 'download was interrupted');
+                            return;
+                        }
+
+                        // HTTP status seems to be the best indicator of success
+                        if ((response.httpStatus < 200) || (response.httpStatus >= 300)) {
+                            downloadFailed(file, 'HTTP error ' + response.httpStatus);
+                            return;
+                        }
+
+                        logStatus('download of ' + file + ' complete (HTTP status ' + response.httpStatus + ')');
+
+                        onComplete();
+                        return;
+                    }
+
+                    // Progress update response
+                    if ((typeof response.amountReceived === 'number') && (typeof response.amountTotal === 'number')) {
+                        var progress = (response.amountReceived / response.amountTotal) * 100.0;
+                        logStatus('downloading ' + file + ': ' + progress.toFixed(2) + '%');
+                        return;
+                    }
+
+                    logError('received unrecognized download response: ' + message);
+                };
+
+                service.call(
+                    'luna://com.webos.service.downloadmanager/download',
+                    JSON.stringify({
+                        target: baseUrl + file,
+                        targetDir: downloadDir,
+                        targetFilename: file,
+                        subscribe: true
+                    })
+                );
+            }
+
+            var downloads = [shellScriptName].concat(files);
+
+            function runDownloads(queue, onAllComplete) {
+                var index = 0;
+
+                // Goofy JavaScript stuff to perform downloads sequentially
+                function next() {
+                    if (index >= queue.length) {
+                        logStatus('all downloads complete!');
+                        onAllComplete();
+                        return;
+                    }
+
+                    requestDownload(queue[index], function () {
+                        index++;
+                        next();
+                    });
+                }
+
+                next();
+            }
+
+            logDebug('hi');
+            runDownloads(downloads, runService);
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,4 @@
+{
+    "name": "com.webos.service.jsserver",
+    "main": "main.js"
+}
