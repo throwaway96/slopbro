@@ -32,6 +32,7 @@ import struct
 import sys
 import threading
 import time
+from hashlib import sha1
 
 try:
     from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -48,15 +49,6 @@ try:
 except ImportError:
     from urllib import unquote
     from urlparse import urlsplit
-
-try:
-    import hashlib
-
-    _sha1 = hashlib.sha1
-except ImportError:  # pragma: no cover - hashlib is always present on 2.7+/3
-    import sha as _sha1_mod
-
-    _sha1 = _sha1_mod.sha
 
 # os.urandom is available on all target versions; used for masking + nonce.
 _urandom = os.urandom
@@ -190,7 +182,7 @@ class WebSocket(object):
             raise WebSocketError("unexpected handshake response: %s" % status_line)
 
         expected = base64.b64encode(
-            _sha1((key + WS_GUID).encode("ascii")).digest()
+            sha1((key + WS_GUID).encode("ascii")).digest()
         ).decode("ascii")
         accept = None
         for line in header.split("\r\n")[1:]:
