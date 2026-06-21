@@ -59,10 +59,12 @@ PORT_TLS = 3001
 PORT_PLAIN = 3000
 
 TARGET_APPS = [
-    ("com.webos.app.dangbei-overlay", "target"),
     ("com.webos.app.adoverlay", "interactiveUrl"),
     ("com.webos.app.acroverlay", "contentTarget"),
     ("com.webos.app.tinybrowser", "contentTarget"),
+    # May not work on certain webOS versions (e.g., 6.5.x) even if present
+    # because of region restrictions.
+    ("com.webos.app.dangbei-overlay", "target"),
 ]
 
 ENTRY_PAGE = "index.html"
