@@ -185,12 +185,28 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 }
             }
 
+            function createServiceBridge() {
+                // Newer name for PalmServiceBridge?
+                if (typeof webOSServiceBridge === 'function') {
+                    return new webOSServiceBridge();
+                }
+
+                if (typeof PalmServiceBridge === 'function') {
+                    return new PalmServiceBridge();
+                }
+
+                logError('PalmServiceBridge is not available; are you running on a webOS device?');
+            }
+
             var downloadDir = '/media/internal/downloads';
 
             function runService() {
                 logDebug('entered runService()');
 
-                var service = new PalmServiceBridge();
+                var bridge = createServiceBridge();
+                if (bridge === null) {
+                    return;
+                }
 
                 var args = [];
                 if (optTelnet) args.push('--telnet');
@@ -199,11 +215,11 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var shellScriptPath = downloadDir + '/' + shellScriptName;
 
                 var requestPayload = {
-                    inputParams: "-- /tmp/run-js-service-no-cgroup ^_~ " + downloadDir + " " + shellScriptPath + " " + args.join(' ')
+                    inputParams: '-- /tmp/run-js-service-no-cgroup ^_~ ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ')
                 };
                 logDebug('request payload: ' + JSON.stringify(requestPayload));
 
-                service.onservicecallback = function (message) {
+                bridge.onservicecallback = function (message) {
                     logDebug('received message: ' + message);
 
                     var response = parse(message, '/run response');
@@ -224,7 +240,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                     logStatus('service launched successfully (. ❛ ᴗ ❛.)');
                 };
 
-                service.call(
+                bridge.call(
                     'luna://com.webos.service.jsserver/run',
                     JSON.stringify(requestPayload)
                 );
@@ -233,21 +249,24 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
             }
 
             function downloadFailed(file, message) {
-                logError("Error downloading " + file + ": " + message);
+                logError('error downloading ' + file + ': ' + message);
             }
 
             // Base URL for downloads is the directory of the current page
             var href = location.href;
-            var baseUrl = href.substring(0, href.lastIndexOf("/") + 1);
+            var baseUrl = href.substring(0, href.lastIndexOf('/') + 1);
 
             function requestDownload(file, onComplete) {
                 logDebug('requesting download of ' + file + ' from ' + baseUrl + file);
 
-                var service = new PalmServiceBridge();
+                var bridge = createServiceBridge();
+                if (bridge === null) {
+                    return;
+                }
 
                 // XXX: I don't know if message order or existence is guaranteed
                 var subscribed = false, complete = false;
-                service.onservicecallback = function (message) {
+                bridge.onservicecallback = function (message) {
                     logDebug('received message: ' + message);
 
                     if (complete) {
@@ -265,12 +284,14 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                         // Initial response to download request
 
                         if (!checkValidResponse(response, 'starting download of ' + file, { returnValue: 'boolean' })) {
+                            bridge.cancel();
                             complete = true;
                             return;
                         }
 
                         if (response.returnValue !== true) {
                             downloadFailed(file, getErrorText(response));
+                            bridge.cancel();
                             complete = true;
                             return;
                         }
@@ -282,7 +303,15 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
 
                     if (response.hasOwnProperty('completed')) {
                         // Final completion response
+
+                        // Stop waiting for further messages
+                        bridge.cancel();
                         complete = true;
+
+                        if (!subscribed) {
+                            logError('received download completion response without subscription: ' + message);
+                            return;
+                        }
 
                         if (!checkValidResponse(response, 'download completion for ' + file, { completed: 'boolean', httpStatus: 'number', aborted: 'boolean', interrupted: 'boolean' })) {
                             return;
@@ -325,7 +354,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                     logError('received unrecognized download response: ' + message);
                 };
 
-                service.call(
+                bridge.call(
                     'luna://com.webos.service.downloadmanager/download',
                     JSON.stringify({
                         target: baseUrl + file,
