@@ -59,6 +59,8 @@ PORT_TLS = 3001
 PORT_PLAIN = 3000
 
 TARGET_APPS = [
+    ("com.webos.app.adoverlayex", "interactiveUrl"),
+    # TODO: Figure out why this doesn't always work on webOS 6.5.3.
     ("com.webos.app.adoverlay", "interactiveUrl"),
     ("com.webos.app.acroverlay", "contentTarget"),
     ("com.webos.app.tinybrowser", "contentTarget"),
