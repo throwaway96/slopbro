@@ -35,12 +35,13 @@ import time
 from hashlib import sha1
 
 try:
-    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 except ImportError:
     try:
-        from BaseHTTPServer import HTTPServer
+        from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
         from SimpleHTTPServer import SimpleHTTPRequestHandler
     except ImportError:
+        BaseHTTPRequestHandler = None
         HTTPServer = None
         SimpleHTTPRequestHandler = None
 
@@ -80,6 +81,10 @@ ASSET_SOURCE_AUTO = "auto"
 ASSET_SOURCE_DIR = "dir"
 ASSET_SOURCE_EMBEDDED = "embedded"
 ASSET_SOURCES = (ASSET_SOURCE_AUTO, ASSET_SOURCE_DIR, ASSET_SOURCE_EMBEDDED)
+
+TEST_SERVER_SIMPLE = "simple"
+TEST_SERVER_PAYLOAD = "payload"
+TEST_SERVER_MODES = (TEST_SERVER_SIMPLE, TEST_SERVER_PAYLOAD)
 
 # --- BEGIN EMBEDDED WWWROOT ---
 EMBEDDED_WWWROOT = {}
@@ -498,6 +503,23 @@ def local_ip_for_remote(remote_host, remote_port=80):
     raise RuntimeError("could not determine local IPv4 address")
 
 
+def guess_local_ip(target_host=None, local_ip_override=None):
+    """Resolve the local IPv4 to advertise, without necessarily knowing a target.
+
+    Prefers an explicit override, then a route lookup toward target_host (if
+    given), then falls back to the route toward an arbitrary external address.
+    """
+    if local_ip_override:
+        return local_ip_override
+    if target_host:
+        return local_ip_for_remote(target_host)
+    # Arbitrary external address; doesn't have to be reachable
+    route_ip = _route_selected_local_ip("8.8.8.8", 80)
+    if route_ip:
+        return route_ip
+    raise RuntimeError("could not determine local IPv4 address")
+
+
 def _route_selected_local_ip(remote_ip, remote_port):
     """Ask the kernel route table which source IP it would pick."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -772,6 +794,188 @@ def _validate_ipv4_address(ip_text):
     return ip_text.count(".") == 3
 
 
+TEST_CONNECTION_MESSAGE = "Here's your slop, bro!\n"
+
+
+def make_test_connection_handler():
+    """Build a minimal request handler that answers every request the same way.
+
+    Used only to prove that the TV (or any browser on the LAN) can reach this
+    host over HTTP; it doesn't serve any real payload/exploit files.
+    """
+    if BaseHTTPRequestHandler is None:
+        raise RuntimeError("no stdlib HTTP request handler available")
+
+    body = TEST_CONNECTION_MESSAGE.encode("utf-8")
+
+    class TestConnectionHandler(BaseHTTPRequestHandler):
+        def _send_headers(self, include_body):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if include_body:
+                self.wfile.write(body)
+
+        def do_GET(self):
+            self._send_headers(True)
+
+        def do_HEAD(self):
+            self._send_headers(False)
+
+        def log_message(self, fmt, *args):
+            log("request from %s: %s" % (self.client_address[0], fmt % args))
+
+    return TestConnectionHandler
+
+
+def start_test_connection_server(bind_host="0.0.0.0", preferred_port=8080):
+    handler = make_test_connection_handler()
+    server = None
+    for port in (preferred_port, 0):
+        try:
+            server = HTTPServer((bind_host, port), handler)
+            break
+        except socket.error:
+            server = None
+    if server is None:
+        raise RuntimeError("could not start local HTTP server")
+
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+    return server
+
+
+def run_test_connection(host=None, local_ip_override=None):
+    """Serve a fixed plain-text response to test basic HTTP connectivity only.
+
+    Doesn't serve the real payload/exploit files and doesn't perform any SSAP
+    pairing; just prints the URL to open manually in the TV's (or any) web
+    browser to confirm that the TV can reach this host over HTTP. host is
+    optional here since no SSAP connection or route-to-TV lookup is required.
+    """
+    if not host:
+        log(
+            "warning: no <tv-ip-or-host> given; the guessed local IP may be "
+            "wrong (recommended: pass the TV's IP address)"
+        )
+
+    http_server = None
+    url = None
+    try:
+        http_server = start_test_connection_server()
+        local_ip = guess_local_ip(
+            target_host=host, local_ip_override=local_ip_override
+        )
+        url = "http://%s:%d/" % (local_ip, http_server.server_port)
+    except Exception as exc:
+        die("could not start test HTTP server: %s" % exc)
+
+    log("test mode: minimal HTTP connectivity check (no payload served)")
+    log("open this URL in the TV's web browser to test HTTP connectivity:")
+    log("    %s" % url)
+    log("press Ctrl+C to stop")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        log("stopping test server")
+    finally:
+        if http_server is not None:
+            try:
+                http_server.shutdown()
+            except Exception:
+                pass
+            try:
+                http_server.server_close()
+            except Exception:
+                pass
+
+
+def run_test_payload(
+    host=None,
+    debug=False,
+    asset_source=ASSET_SOURCE_AUTO,
+    local_ip_override=None,
+):
+    """Serve the payload page and print its URL without pairing/launching.
+
+    Lets the user manually open the URL in the TV's web browser (or any
+    browser on the LAN) to confirm that the payload/exploit files are served
+    correctly, without needing a working SSAP connection first. host is
+    recommended, since it's used to guess the local IP to listen on.
+    """
+    if not host:
+        log(
+            "warning: no <tv-ip-or-host> given; the guessed local IP may be "
+            "wrong (recommended: pass the TV's IP address)"
+        )
+
+    tracked_files = required_files()
+    wwwroot_dir = None
+    asset_source_used = None
+    allow_embedded_assets = True
+    allow_filesystem_fallback = True
+    http_server = None
+    page_url = None
+    try:
+        (
+            wwwroot_dir,
+            asset_source_used,
+            allow_embedded_assets,
+            allow_filesystem_fallback,
+        ) = resolve_asset_root(asset_source, tracked_files)
+    except RuntimeError as exc:
+        die("%s" % exc)
+
+    tracker = RequestedFilesTracker(tracked_files)
+    try:
+        http_server = start_http_server(
+            wwwroot_dir,
+            tracker,
+            tracked_files,
+            allow_embedded_assets,
+            allow_filesystem_fallback,
+        )
+        local_ip = guess_local_ip(
+            target_host=host, local_ip_override=local_ip_override
+        )
+        page_url = build_self_hosted_url(
+            host,
+            http_server.server_port,
+            debug=debug,
+            local_ip_override=local_ip,
+        )
+    except Exception as exc:
+        die("could not start self-hosted page server: %s" % exc)
+
+    log(
+        "test mode: serving files from %s (source=%s)"
+        % (wwwroot_dir, asset_source_used)
+    )
+    log("open this URL in the TV's web browser to test the payload:")
+    log("    %s" % page_url)
+    log("press Ctrl+C to stop")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        log("stopping test server")
+    finally:
+        if http_server is not None:
+            try:
+                http_server.shutdown()
+            except Exception:
+                pass
+            try:
+                http_server.server_close()
+            except Exception:
+                pass
+
+
 def run(
     host,
     debug=False,
@@ -886,15 +1090,29 @@ def run(
                 pass
 
 
-def usage():
+def usage(full=False):
     print(
         "usage: python %s [--debug] "
         "[--asset-source auto|dir|embedded] "
-        "[--local-ip <ipv4>] <tv-ip-or-host>" % sys.argv[0]
+        "[--local-ip <ipv4>] [--test-server simple|payload] "
+        "[<tv-ip-or-host>]" % sys.argv[0]
     )
+    if not full:
+        print("(use --help for more details)")
+        return
     print(
         "example: python %s --debug --asset-source auto "
         "--local-ip 192.168.1.100 192.168.1.50" % sys.argv[0]
+    )
+    print(
+        "example: python %s --test-server simple  "
+        "(minimal HTTP connectivity check; no payload served; "
+        "<tv-ip-or-host> recommended)" % sys.argv[0]
+    )
+    print(
+        "example: python %s --test-server payload 192.168.1.50  "
+        "(serves the payload/exploit files and prints the URL for manual "
+        "testing; <tv-ip-or-host> recommended)" % sys.argv[0]
     )
 
 
@@ -903,14 +1121,28 @@ def main(argv=None):
     debug = False
     asset_source = ASSET_SOURCE_AUTO
     local_ip_override = None
+    test_server_mode = None
     positional = []
     index = 0
 
     # No argparse :(
     while index < len(argv):
         arg = argv[index]
-        if arg == "--debug":
+        if arg in ("--help", "-h", "-?"):
+            usage(full=True)
+            return 0
+        elif arg == "--debug":
             debug = True
+            index += 1
+        elif arg == "--test-server":
+            if index + 1 >= len(argv):
+                print("error: missing value for --test-server")
+                usage()
+                return 2
+            test_server_mode = argv[index + 1]
+            index += 2
+        elif arg.startswith("--test-server="):
+            test_server_mode = arg.split("=", 1)[1]
             index += 1
         elif arg == "--local-ip":
             if index + 1 >= len(argv):
@@ -945,26 +1177,45 @@ def main(argv=None):
         usage()
         return 2
 
+    if test_server_mode is not None and test_server_mode not in TEST_SERVER_MODES:
+        print("error: invalid --test-server value '%s'" % test_server_mode)
+        usage()
+        return 2
+
     if local_ip_override and not _validate_ipv4_address(local_ip_override):
         print("error: invalid --local-ip value '%s'" % local_ip_override)
         usage()
         return 2
 
-    if not positional:
-        usage()
-        return 2
     if len(positional) > 1:
         print("error: too many arguments")
         usage()
         return 2
 
-    host = positional[0]
-    run(
-        host,
-        debug=debug,
-        asset_source=asset_source,
-        local_ip_override=local_ip_override,
-    )
+    if test_server_mode is None and not positional:
+        usage()
+        return 2
+
+    host = positional[0] if positional else None
+    if test_server_mode == TEST_SERVER_SIMPLE:
+        run_test_connection(
+            host,
+            local_ip_override=local_ip_override,
+        )
+    elif test_server_mode == TEST_SERVER_PAYLOAD:
+        run_test_payload(
+            host,
+            debug=debug,
+            asset_source=asset_source,
+            local_ip_override=local_ip_override,
+        )
+    else:
+        run(
+            host,
+            debug=debug,
+            asset_source=asset_source,
+            local_ip_override=local_ip_override,
+        )
     return 0
 
 

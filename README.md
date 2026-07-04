@@ -46,7 +46,7 @@ which is executed with root privileges. It is responsible for launching
 Run the script with Python, passing the IP address of your TV:
 
 ```bash
-python slopbro.py [--debug] [--local-ip <LOCAL IP>] [--asset-source <auto|dir|embedded>] <TV IP ADDRESS>
+python slopbro.py [--debug] [--local-ip <LOCAL IP>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
 *NOTE: On webOS 7+, you may have to use `python3` instead of `python`.*
@@ -64,6 +64,19 @@ which can be useful if the script guesses the wrong IP address.
 
 The `--asset-source` option allows you to specify where the script should look
 for assets (`auto`, `dir`, `embedded`).
+
+The `--test-server` option starts the local HTTP server and prints its URL
+instead of connecting to the TV over SSAP, so you can test connectivity
+manually by opening the URL in a browser. It doesn't pair with or launch
+anything on the TV. The `<TV IP ADDRESS>` argument is optional but
+recommended in both modes below; if omitted, the script guesses a
+LAN-facing local IP, which may be wrong. Two modes are available:
+
+- `simple`: serves a fixed plain-text response to confirm basic HTTP
+  reachability only.
+- `payload`: serves the real exploit/payload files (same as a normal run)
+  without doing any SSAP pairing or launching, so you can load `index.html`
+  directly in a browser to examine the payload itself.
 
 ## Packaging
 
@@ -103,6 +116,9 @@ are present.
 - Make sure there are no weird network issues between your TV and wherever
   you're running SlopBro. Remember that connections need to work in both
   directions.
+
+- Use `--test-server simple` to check basic HTTP connectivity from the TV's
+  browser without needing SSAP pairing to work first.
 
 ## Credits
 
