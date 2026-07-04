@@ -15,11 +15,14 @@ webOS TV. Unfortunately, the Python 2.7 environment on webOS 6 (and
 presumably older) is missing the HTTP server stuff, so it was kind of a
 waste of time. Oh well.
 
-I've only minimally tested it on webOS 6 (remember: slop!), but it
-should probably work on at least some other versions.
+I've only lightly tested it (remember: slop!), but people have gotten it
+to work on a bunch of webOS versions.
 
-I also tested some parts on webOS 10 (25), and other people have used it
-successfully on webOS 5 and 7. I believe it should work on webOS 11 (26).
+SlopBro has been used successfully against webOS 6 (including 6.5.3) and
+7–10 (22–25) and can probably also exploit webOS 5. (While it could possibly
+work all the way back to webOS 3.4.2, I recommend using
+[dejavuln-autoroot](https://github.com/throwaway96/dejavuln-autoroot) for
+webOS 3.5 and 4.x.)
 
 ### How it works
 
