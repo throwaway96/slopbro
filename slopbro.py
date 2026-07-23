@@ -485,6 +485,41 @@ def launch_app(client, app_id, params):
     return resp.get("payload") or {}
 
 
+def get_webos_version(client):
+    """Query the TV's webOS version over SSAP and return it as a string.
+
+    Uses 'major_ver'/'minor_ver' from getCurrentSWInformation to build a
+    "<major>.<minor>" version string. Returns None if the query fails or
+    the response doesn't contain usable version fields.
+
+    TODO: use the detected version to choose which target app(s) to try.
+    """
+    try:
+        resp = client.request(
+            "ssap://com.webos.service.update/getCurrentSWInformation",
+            {},
+            timeout=8.0,
+        )
+    except SSAPError as exc:
+        log("warning: could not query webOS version (%s)" % exc)
+        return None
+    if resp.get("type") == "error":
+        log(
+            "warning: getCurrentSWInformation denied (%s)"
+            % resp.get("error", "unknown")
+        )
+        return None
+    payload = resp.get("payload") or {}
+    major_ver = payload.get("major_ver")
+    minor_ver = payload.get("minor_ver")
+    if major_ver and minor_ver:
+        return "%s.%s" % (major_ver, minor_ver)
+    if major_ver:
+        return str(major_ver)
+    log("warning: getCurrentSWInformation response missing version fields")
+    return None
+
+
 def local_ip_for_remote(remote_host, remote_port=80):
     """Choose a LAN-reachable local IPv4 for a given remote host."""
     remote_ip = socket.gethostbyname(remote_host)
@@ -981,6 +1016,7 @@ def run(
     debug=False,
     asset_source=ASSET_SOURCE_AUTO,
     local_ip_override=None,
+    webos_version_override=None,
 ):
     secure = True
     port = PORT_TLS if secure else PORT_PLAIN
@@ -1064,6 +1100,14 @@ def run(
         else:
             log("registered")
 
+        if webos_version_override:
+            webos_version = webos_version_override
+            log("using forced webOS version: %s" % webos_version)
+        else:
+            webos_version = get_webos_version(client)
+            if webos_version:
+                log("detected webOS version: %s" % webos_version)
+
         app_id, url_param_name = verify_app_present(client, TARGET_APPS)
 
         log("launching %s -> %s" % (app_id, page_url))
@@ -1094,7 +1138,8 @@ def usage(full=False):
     print(
         "usage: python %s [--debug] "
         "[--asset-source auto|dir|embedded] "
-        "[--local-ip <ipv4>] [--test-server simple|payload] "
+        "[--local-ip <ipv4>] [--webos-version <version>] "
+        "[--test-server simple|payload] "
         "[<tv-ip-or-host>]" % sys.argv[0]
     )
     if not full:
@@ -1103,6 +1148,11 @@ def usage(full=False):
     print(
         "example: python %s --debug --asset-source auto "
         "--local-ip 192.168.1.100 192.168.1.50" % sys.argv[0]
+    )
+    print(
+        "example: python %s --webos-version 6.5 192.168.1.50  "
+        "(skip querying the TV and use this webOS version instead)"
+        % sys.argv[0]
     )
     print(
         "example: python %s --test-server simple  "
@@ -1121,6 +1171,7 @@ def main(argv=None):
     debug = False
     asset_source = ASSET_SOURCE_AUTO
     local_ip_override = None
+    webos_version_override = None
     test_server_mode = None
     positional = []
     index = 0
@@ -1153,6 +1204,16 @@ def main(argv=None):
             index += 2
         elif arg.startswith("--local-ip="):
             local_ip_override = arg.split("=", 1)[1]
+            index += 1
+        elif arg == "--webos-version":
+            if index + 1 >= len(argv):
+                print("error: missing value for --webos-version")
+                usage()
+                return 2
+            webos_version_override = argv[index + 1]
+            index += 2
+        elif arg.startswith("--webos-version="):
+            webos_version_override = arg.split("=", 1)[1]
             index += 1
         elif arg == "--asset-source":
             if index + 1 >= len(argv):
@@ -1187,6 +1248,11 @@ def main(argv=None):
         usage()
         return 2
 
+    if webos_version_override is not None and not webos_version_override.strip():
+        print("error: --webos-version value must not be empty")
+        usage()
+        return 2
+
     if len(positional) > 1:
         print("error: too many arguments")
         usage()
@@ -1215,6 +1281,7 @@ def main(argv=None):
             debug=debug,
             asset_source=asset_source,
             local_ip_override=local_ip_override,
+            webos_version_override=webos_version_override,
         )
     return 0
 
