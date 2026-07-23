@@ -7,7 +7,8 @@
 const child_process = require("child_process");
 const fs = require("fs");
 
-function log(...args) {
+function log() {
+  const args = Array.prototype.slice.call(arguments);
   const message = args.join(" ");
   console.log(message);
   fs.appendFileSync("/tmp/slopbro.log", message + "\n");
@@ -27,7 +28,7 @@ function run() {
   log("scriptPath:", scriptPath);
   log("args:", args.join(" "));
 
-  let status = "unknown error";
+  var status = "unknown error";
 
   try {
     child_process.execFileSync("/bin/sh", [scriptPath].concat(args));
@@ -43,4 +44,4 @@ function run() {
   }
 }
 
-module.exports = { run };
+module.exports = { run: run };
