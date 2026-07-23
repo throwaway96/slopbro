@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+*.json text
+*.md text
+*.py text
+*.sh text
+
+COPYING text
+Makefile text
+.gitignore text
+.gitattributes text
