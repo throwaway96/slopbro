@@ -49,7 +49,7 @@ which is executed with root privileges. It is responsible for launching
 Run the script with Python, passing the IP address of your TV:
 
 ```bash
-python slopbro.py [--debug] [--local-ip <LOCAL IP>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
+python slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
 *NOTE: On webOS 7+, you may have to use `python3` instead of `python`.*
@@ -61,6 +61,10 @@ a `.key` file for future use.)
 
 The `--debug` option enables extra output on the TV screen as well as in
 `autoroot.log`.
+
+The `--curl-insecure` option passes `-k` to `curl` when downloading Homebrew
+Channel, disabling TLS certificate verification. Use it only when necessary
+(e.g., when your TV does not have the correct date due to SDP being blocked).
 
 The `--local-ip` option allows you to specify the local IP address manually,
 which can be useful if the script guesses the wrong IP address.

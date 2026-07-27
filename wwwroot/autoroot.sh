@@ -121,7 +121,11 @@ download_file() {
         rm -f -- "${dl_path}"
     fi
 
-    curl -L -o "${dl_path}" -- "${dl_url}"
+    if [ -n "${CURL_INSECURE}" ]; then
+        curl -k -L -o "${dl_path}" -- "${dl_url}"
+    else
+        curl -L -o "${dl_path}" -- "${dl_url}"
+    fi
 }
 
 sd_script='/media/cryptofs/apps/usr/palm/services/com.palmdts.devmode.service/start-devmode.sh'
@@ -356,6 +360,9 @@ while [ "${#}" -gt 0 ]; do
         ;;
         '--leave-script')
             LEAVE_SCRIPT='arg'
+        ;;
+        '--curl-insecure')
+            CURL_INSECURE='arg'
         ;;
         *)
             echo "Unknown option '${1}'"

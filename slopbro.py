@@ -814,12 +814,20 @@ def start_http_server(
     return server
 
 
-def build_self_hosted_url(tv_host, server_port, debug=False, local_ip_override=None):
+def build_self_hosted_url(
+    tv_host,
+    server_port,
+    debug=False,
+    local_ip_override=None,
+    curl_insecure=False,
+):
     local_ip = local_ip_override or local_ip_for_remote(tv_host)
     url = "http://%s:%d/%s" % (local_ip, server_port, ENTRY_PAGE)
     url += "?script=%s&files=%s" % (SHELL_SCRIPT, ";".join(SERVICE_FILES))
     if debug:
         url += "&debug"
+    if curl_insecure:
+        url += "&curl-insecure"
     return url
 
 
@@ -936,6 +944,7 @@ def run_test_payload(
     debug=False,
     asset_source=ASSET_SOURCE_AUTO,
     local_ip_override=None,
+    curl_insecure=False,
 ):
     """Serve the payload page and print its URL without pairing/launching.
 
@@ -983,6 +992,7 @@ def run_test_payload(
             host,
             http_server.server_port,
             debug=debug,
+            curl_insecure=curl_insecure,
             local_ip_override=local_ip,
         )
     except Exception as exc:
@@ -1019,6 +1029,7 @@ def run(
     asset_source=ASSET_SOURCE_AUTO,
     local_ip_override=None,
     webos_version_override=None,
+    curl_insecure=False,
 ):
     secure = True
     port = PORT_TLS if secure else PORT_PLAIN
@@ -1068,6 +1079,7 @@ def run(
             host,
             http_server.server_port,
             debug=debug,
+            curl_insecure=curl_insecure,
             local_ip_override=local_ip_override,
         )
     except Exception as exc:
@@ -1139,7 +1151,7 @@ def run(
 
 def usage(full=False):
     print(
-        "usage: python %s [--debug] "
+        "usage: python %s [--debug] [--curl-insecure] "
         "[--asset-source auto|dir|embedded] "
         "[--local-ip <ipv4>] [--webos-version <version>] "
         "[--test-server simple|payload] "
@@ -1172,6 +1184,7 @@ def usage(full=False):
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     debug = False
+    curl_insecure = False
     asset_source = ASSET_SOURCE_AUTO
     local_ip_override = None
     webos_version_override = None
@@ -1187,6 +1200,9 @@ def main(argv=None):
             return 0
         elif arg == "--debug":
             debug = True
+            index += 1
+        elif arg == "--curl-insecure":
+            curl_insecure = True
             index += 1
         elif arg == "--test-server":
             if index + 1 >= len(argv):
@@ -1277,6 +1293,7 @@ def main(argv=None):
             debug=debug,
             asset_source=asset_source,
             local_ip_override=local_ip_override,
+            curl_insecure=curl_insecure,
         )
     else:
         run(
@@ -1285,6 +1302,7 @@ def main(argv=None):
             asset_source=asset_source,
             local_ip_override=local_ip_override,
             webos_version_override=webos_version_override,
+            curl_insecure=curl_insecure,
         )
     return 0
 

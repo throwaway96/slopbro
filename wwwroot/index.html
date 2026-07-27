@@ -55,6 +55,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
             // Get options from query parameters
             var optDebug = getQueryParam('debug') !== null;
             var optTelnet = getQueryParam('telnet') !== null;
+            var optCurlInsecure = getQueryParam('curl-insecure') !== null;
 
             var shellScriptName = (function () {
                 var rawScript = getQueryParam('script');
@@ -211,6 +212,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var args = [];
                 if (optTelnet) args.push('--telnet');
                 if (optDebug) args.push('--debug');
+                if (optCurlInsecure) args.push('--curl-insecure');
 
                 var shellScriptPath = downloadDir + '/' + shellScriptName;
 
