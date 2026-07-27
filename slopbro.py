@@ -1105,7 +1105,8 @@ def run(
         if webos_version_override:
             webos_version = webos_version_override
             log("using forced webOS version: %s" % webos_version)
-        else:
+        elif False:
+            # TODO: Fix and re-enable.
             webos_version = get_webos_version(client)
             if webos_version:
                 log("detected webOS version: %s" % webos_version)
