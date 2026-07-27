@@ -59,17 +59,22 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 PORT_TLS = 3001
 PORT_PLAIN = 3000
 
+# TODO: Support complete webOS version numbers (or firmware versions?).
+# TODO: Figure out actual webOS version ranges for each app.
 TARGET_APPS = [
-    # Seems to work on webOS 11. Should work on older versions.
-    ("com.webos.app.voiceweb", "URL"),
-    ("com.webos.app.adoverlayex", "interactiveUrl"),
+    ("com.webos.app.voiceweb", "URL", [11]),
+    (
+        "com.webos.app.adoverlayex",
+        "interactiveUrl",
+        [3, 4, 5, 6, 7, 8, 9, 10],
+    ),
     # TODO: Figure out why this doesn't always work on webOS 6.5.3.
-    ("com.webos.app.adoverlay", "interactiveUrl"),
-    ("com.webos.app.acroverlay", "contentTarget"),
-    ("com.webos.app.tinybrowser", "contentTarget"),
+    ("com.webos.app.adoverlay", "interactiveUrl", [3, 4, 5, 6, 7, 8, 9, 10]),
+    ("com.webos.app.acroverlay", "contentTarget", [3, 4, 5, 6, 7, 8, 9, 10]),
+    ("com.webos.app.tinybrowser", "contentTarget", [3, 4, 5, 6, 7, 8, 9, 10]),
     # May not work on certain webOS versions (e.g., 6.5.x) even if present
     # because of region restrictions.
-    ("com.webos.app.dangbei-overlay", "target"),
+    ("com.webos.app.dangbei-overlay", "target", [3, 4, 6, 7, 8, 9, 10]),
 ]
 
 ENTRY_PAGE = "index.html"
@@ -442,6 +447,23 @@ def save_client_key(ip, client_key):
 # ---------------------------------------------------------------------------
 # High-level flow
 # ---------------------------------------------------------------------------
+
+
+def target_apps_for_webos_version(candidates, webos_version):
+    """Return launcher candidates compatible with the given webOS version."""
+    if webos_version is None:
+        return [(app_id, url_param_name) for app_id, url_param_name, _ in candidates]
+
+    try:
+        major_version = int(str(webos_version).split(".", 1)[0])
+    except (TypeError, ValueError):
+        raise ValueError("invalid webOS version: %s" % webos_version)
+
+    return [
+        (app_id, url_param_name)
+        for app_id, url_param_name, major_versions in candidates
+        if major_version in major_versions
+    ]
 
 
 def verify_app_present(client, candidates):
@@ -1114,6 +1136,7 @@ def run(
         else:
             log("registered")
 
+        webos_version = None
         if webos_version_override:
             webos_version = webos_version_override
             log("using forced webOS version: %s" % webos_version)
@@ -1123,7 +1146,14 @@ def run(
             if webos_version:
                 log("detected webOS version: %s" % webos_version)
 
-        app_id, url_param_name = verify_app_present(client, TARGET_APPS)
+        target_apps = []
+        try:
+            target_apps = target_apps_for_webos_version(TARGET_APPS, webos_version)
+        except ValueError as exc:
+            die("%s" % exc)
+        if not target_apps:
+            die("no target apps configured for webOS %s" % webos_version)
+        app_id, url_param_name = verify_app_present(client, target_apps)
 
         log("launching %s -> %s" % (app_id, page_url))
         try:

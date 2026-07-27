@@ -49,7 +49,7 @@ which is executed with root privileges. It is responsible for launching
 Run the script with Python, passing the IP address of your TV:
 
 ```bash
-python slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
+python slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
 *NOTE: On webOS 7+, you may have to use `python3` instead of `python`.*
@@ -68,6 +68,13 @@ Channel, disabling TLS certificate verification. Use it only when necessary
 
 The `--local-ip` option allows you to specify the local IP address manually,
 which can be useful if the script guesses the wrong IP address.
+
+The `--webos-version` option specifies the TV's webOS version and limits the
+target apps to those configured for that major version. Dotted versions such
+as `6.5` are accepted and treated as major version `6`.
+
+*The version is not currently auto-detected, so you may need to specify it if
+the selected app fails.*
 
 The `--asset-source` option allows you to specify where the script should look
 for assets (`auto`, `dir`, `embedded`).
