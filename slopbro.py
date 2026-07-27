@@ -60,6 +60,8 @@ PORT_TLS = 3001
 PORT_PLAIN = 3000
 
 TARGET_APPS = [
+    # Seems to work on webOS 11. Should work on older versions.
+    ("com.webos.app.voiceweb", "URL"),
     ("com.webos.app.adoverlayex", "interactiveUrl"),
     # TODO: Figure out why this doesn't always work on webOS 6.5.3.
     ("com.webos.app.adoverlay", "interactiveUrl"),
