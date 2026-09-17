@@ -49,7 +49,7 @@ which is executed with root privileges. It is responsible for launching
 Run the script with Python, passing the IP address of your TV:
 
 ```bash
-python slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
+python slopbro.py [--debug] [--curl-insecure] [--fake-service-path <PATH>|--no-fake-service-path] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
 *NOTE: On webOS 7+, you may have to use `python3` instead of `python`.*
@@ -65,6 +65,11 @@ The `--debug` option enables extra output on the TV screen as well as in
 The `--curl-insecure` option passes `-k` to `curl` when downloading Homebrew
 Channel, disabling TLS certificate verification. Use it only when necessary
 (e.g., when your TV does not have the correct date due to SDP being blocked).
+
+The `--fake-service-path` option specifies the fake service path used to
+bypass the service launch patch. It defaults to
+`/usr/palm/services/com.palm.service.devmode`. Use `--no-fake-service-path` to
+disable the bypass and omit the `fake-service-path` query parameter.
 
 The `--local-ip` option allows you to specify the local IP address manually,
 which can be useful if the script guesses the wrong IP address.

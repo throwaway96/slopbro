@@ -93,6 +93,9 @@ TEST_SERVER_SIMPLE = "simple"
 TEST_SERVER_PAYLOAD = "payload"
 TEST_SERVER_MODES = (TEST_SERVER_SIMPLE, TEST_SERVER_PAYLOAD)
 
+# Should exist on all targeted webOS versions.
+DEFAULT_FAKE_SERVICE_PATH = "/usr/palm/services/com.palm.service.devmode"
+
 # --- BEGIN EMBEDDED WWWROOT ---
 EMBEDDED_WWWROOT = {}
 # --- END EMBEDDED WWWROOT ---
@@ -842,6 +845,7 @@ def build_self_hosted_url(
     debug=False,
     local_ip_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     local_ip = local_ip_override or local_ip_for_remote(tv_host)
     url = "http://%s:%d/%s" % (local_ip, server_port, ENTRY_PAGE)
@@ -850,6 +854,8 @@ def build_self_hosted_url(
         url += "&debug"
     if curl_insecure:
         url += "&curl-insecure"
+    if fake_service_path:
+        url += "&fake-service-path=%s" % fake_service_path
     return url
 
 
@@ -967,6 +973,7 @@ def run_test_payload(
     asset_source=ASSET_SOURCE_AUTO,
     local_ip_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     """Serve the payload page and print its URL without pairing/launching.
 
@@ -1016,6 +1023,7 @@ def run_test_payload(
             debug=debug,
             curl_insecure=curl_insecure,
             local_ip_override=local_ip,
+            fake_service_path=fake_service_path,
         )
     except Exception as exc:
         die("could not start self-hosted page server: %s" % exc)
@@ -1052,6 +1060,7 @@ def run(
     local_ip_override=None,
     webos_version_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     secure = True
     port = PORT_TLS if secure else PORT_PLAIN
@@ -1103,6 +1112,7 @@ def run(
             debug=debug,
             curl_insecure=curl_insecure,
             local_ip_override=local_ip_override,
+            fake_service_path=fake_service_path,
         )
     except Exception as exc:
         die("could not start self-hosted page server: %s" % exc)
@@ -1182,6 +1192,7 @@ def run(
 def usage(full=False):
     print(
         "usage: python %s [--debug] [--curl-insecure] "
+        "[--fake-service-path <path>|--no-fake-service-path] "
         "[--asset-source auto|dir|embedded] "
         "[--local-ip <ipv4>] [--webos-version <version>] "
         "[--test-server simple|payload] "
@@ -1215,6 +1226,8 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     debug = False
     curl_insecure = False
+    fake_service_path = DEFAULT_FAKE_SERVICE_PATH
+    disable_fake_service_path = False
     asset_source = ASSET_SOURCE_AUTO
     local_ip_override = None
     webos_version_override = None
@@ -1233,6 +1246,21 @@ def main(argv=None):
             index += 1
         elif arg == "--curl-insecure":
             curl_insecure = True
+            index += 1
+        elif arg == "--fake-service-path":
+            if index + 1 >= len(argv):
+                print("error: missing value for --fake-service-path")
+                usage()
+                return 2
+            fake_service_path = argv[index + 1]
+            disable_fake_service_path = False
+            index += 2
+        elif arg.startswith("--fake-service-path="):
+            fake_service_path = arg.split("=", 1)[1]
+            disable_fake_service_path = False
+            index += 1
+        elif arg == "--no-fake-service-path":
+            disable_fake_service_path = True
             index += 1
         elif arg == "--test-server":
             if index + 1 >= len(argv):
@@ -1302,6 +1330,14 @@ def main(argv=None):
         usage()
         return 2
 
+    if not fake_service_path.strip():
+        print("error: --fake-service-path value must not be empty")
+        usage()
+        return 2
+
+    if disable_fake_service_path:
+        fake_service_path = ""
+
     if len(positional) > 1:
         print("error: too many arguments")
         usage()
@@ -1324,6 +1360,7 @@ def main(argv=None):
             asset_source=asset_source,
             local_ip_override=local_ip_override,
             curl_insecure=curl_insecure,
+            fake_service_path=fake_service_path,
         )
     else:
         run(
@@ -1333,6 +1370,7 @@ def main(argv=None):
             local_ip_override=local_ip_override,
             webos_version_override=webos_version_override,
             curl_insecure=curl_insecure,
+            fake_service_path=fake_service_path,
         )
     return 0
 

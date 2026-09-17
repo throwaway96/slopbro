@@ -61,7 +61,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var rawScript = getQueryParam('script');
 
                 if (rawScript === null) {
-                    // XXX: This should be an error
+                    // XXX: This should be an error: script required
                     return '';
                 }
 
@@ -72,11 +72,27 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var rawFiles = getQueryParam('files');
 
                 if (rawFiles === null) {
-                    // XXX: This should be an error
+                    // XXX: This should be an error: files required
                     return [];
                 }
 
                 return rawFiles.split(';');
+            })();
+
+            var fakeServicePath = (function () {
+                var rawFakePath = getQueryParam('fake-service-path');
+
+                if (rawFakePath === null) {
+                    // The query parameter was not provided; fine
+                    return null;
+                }
+
+                if ((typeof rawFakePath !== 'string') || (rawFakePath.length === 0)) {
+                    // XXX: Should be an error: must be a non-empty string
+                    return null;
+                }
+
+                return rawFakePath;
             })();
 
             var statusElem = document.getElementById('status');
@@ -216,9 +232,21 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
 
                 var shellScriptPath = downloadDir + '/' + shellScriptName;
 
-                var requestPayload = {
-                    inputParams: '-- /tmp/run-js-service-no-cgroup ^_~ ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ')
-                };
+                var requestPayload = (function () {
+                    var inputParams;
+                    if (fakeServicePath !== null) {
+                        // Replace the original dummy arg with a fake service path to bypass the patch attempt, and add a new dummy arg to bump it into the correct position.
+                        inputParams = '^_~ -- /tmp/run-js-service-no-cgroup ' + fakeServicePath + ' ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ');
+
+                        // More straightforward way to get the fake service path into position.
+                        //inputParams = 'a b c ' + fakeServicePath + ' -- /tmp/run-js-service-no-cgroup ^_~ ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ');
+                    } else {
+                        // No fake service path specified, so use the original method.
+                        inputParams = '-- /tmp/run-js-service-no-cgroup ^_~ ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ');
+                    }
+
+                    return { inputParams: inputParams };
+                })();
                 logDebug('request payload: ' + JSON.stringify(requestPayload));
 
                 bridge.onservicecallback = function (message) {
