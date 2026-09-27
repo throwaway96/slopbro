@@ -255,8 +255,9 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
             }
 
             // Base URL for downloads is the directory of the current page
-            var href = location.href;
-            var baseUrl = href.substring(0, href.lastIndexOf('/') + 1);
+            var pathname = location.pathname;
+            var newPath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
+            var baseUrl = location.origin + newPath;
 
             function requestDownload(file, onComplete) {
                 logDebug('requesting download of ' + file + ' from ' + baseUrl + file);
