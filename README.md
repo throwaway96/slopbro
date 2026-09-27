@@ -9,11 +9,14 @@ Python 2.7/3.x-compatible WebSocket client?) The rest is good, old-fashioned
 SlopBro is a proof-of-concept exploit for the jsserver vulnerability in
 LG TVs.
 
-I tried to make it compatible with Python 2.7 and 3.x with no dependencies
+~~I tried to make it compatible with Python 2.7 and 3.x with no dependencies
 outside the standard library so that it could be run on all versions of
 webOS TV. Unfortunately, the Python 2.7 environment on webOS 6 (and
 presumably older) is missing the HTTP server stuff, so it was kind of a
-waste of time. Oh well.
+waste of time. Oh well.~~
+
+Python 2 support has now been dropped. SSAP never worked right via loopback
+anyway. The script still uses only the standard library.
 
 I've only lightly tested it (remember: slop!), but people have gotten it
 to work on a bunch of webOS versions.
@@ -46,13 +49,13 @@ which is executed with root privileges. It is responsible for launching
 
 ## Running
 
-Run the script with Python, passing the IP address of your TV:
+Run the script with Python 3, passing the IP address of your TV:
 
 ```bash
-python slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
+python3 slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
-*NOTE: On webOS 7+, you may have to use `python3` instead of `python`.*
+Use `python3 slopbro.py --help` for the full option reference.
 
 Accept the pairing prompt on the target TV. (The credentials will be saved in
 a `.key` file for future use.)
@@ -99,27 +102,36 @@ distributed as a single file with embedded assets.
 
 ### Building a single-file package
 
-Generate a standalone file with:
+The packaging tool requires Python 3.12 or newer (independently of the
+launcher's runtime requirements). Generate a standalone file with:
 
 ```bash
-python tools/package_single_file.py --out dist/slopbro_packed.py
+python3 tools/package_single_file.py --out dist/slopbro_packed.py
 ```
 
 Then run it directly (no `wwwroot` required):
 
 ```bash
-python dist/slopbro_packed.py 192.168.1.50
+python3 dist/slopbro_packed.py 192.168.1.50
 ```
 
 You can also explicitly specify where it should look for assets
 (`embedded`, `dir`):
 
 ```bash
-python dist/slopbro_packed.py --asset-source embedded 192.168.1.50
+python3 dist/slopbro_packed.py --asset-source embedded 192.168.1.50
 ```
 
 By default (`auto` mode), embedded assets are preferred over files if both
 are present.
+
+## Tests
+
+Run the CLI and HTTP handler regression tests without connecting to a TV:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## Troubleshooting
 

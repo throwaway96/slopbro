@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # SlopBro
@@ -10,17 +10,16 @@
 slopbro.py - Connect to an LG webOS TV over SSAP, pair, and
 launch various apps with a self-hosted payload page.
 
-Single file, standard library only. Works on Python 2.7 and Python 3.x, so it can
-run on a PC on the LAN or directly on the TV.
+Single file, standard library only. Requires Python 3 and should be run on
+a PC on the same LAN as the TV.
 
 Example:
-    python slopbro.py 192.168.1.50
-    python slopbro.py --debug 192.168.1.50
-    python slopbro.py --local-ip 1.2.3.4 192.168.1.50
+    python3 slopbro.py 192.168.1.50
+    python3 slopbro.py --debug 192.168.1.50
+    python3 slopbro.py --local-ip 1.2.3.4 192.168.1.50
 """
 
-from __future__ import print_function
-
+import argparse
 import base64
 import io
 import json
@@ -33,26 +32,8 @@ import sys
 import threading
 import time
 from hashlib import sha1
-
-try:
-    from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
-except ImportError:
-    try:
-        from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-        from SimpleHTTPServer import SimpleHTTPRequestHandler
-    except ImportError:
-        BaseHTTPRequestHandler = None
-        HTTPServer = None
-        SimpleHTTPRequestHandler = None
-
-try:
-    from urllib.parse import unquote, urlsplit
-except ImportError:
-    from urllib import unquote
-    from urlparse import urlsplit
-
-# os.urandom is available on all target versions; used for masking + nonce.
-_urandom = os.urandom
+from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import unquote, urlsplit
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -140,7 +121,7 @@ class WebSocketError(Exception):
     pass
 
 
-class WebSocket(object):
+class WebSocket:
     """A tiny blocking WebSocket client over a raw (optionally TLS) socket.
 
     Only what SSAP needs: a client handshake with no Origin header, masked text
@@ -161,10 +142,7 @@ class WebSocket(object):
     def connect(cls, host, port, secure=True, timeout=CONNECT_TIMEOUT):
         raw = socket.create_connection((host, port), timeout)
         if secure:
-            proto = getattr(ssl, "PROTOCOL_TLS_CLIENT", None)
-            if proto is None:
-                proto = getattr(ssl, "PROTOCOL_SSLv23", ssl.PROTOCOL_TLS)
-            context = ssl.SSLContext(proto)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             # Intentional: the TV uses a self-signed certificate.
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
@@ -176,7 +154,7 @@ class WebSocket(object):
         return ws
 
     def _handshake(self, host, port, secure):
-        key = base64.b64encode(_urandom(16)).decode("ascii")
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
         # Deliberately no Origin header: that is what lets a native client past
         # the SSAP server's web-origin filter.
         lines = [
@@ -246,7 +224,7 @@ class WebSocket(object):
         else:
             header.append(mask_bit | 127)
             header += struct.pack("!Q", length)
-        mask = bytearray(_urandom(4))
+        mask = os.urandom(4)
         header += mask
         masked = bytearray(payload)
         for i in range(len(masked)):
@@ -300,7 +278,7 @@ class WebSocket(object):
     def _send_close(self):
         try:
             self._send_frame(self.OP_CLOSE, b"")
-        except (WebSocketError, socket.error):
+        except (WebSocketError, OSError):
             pass
 
     def close(self):
@@ -309,7 +287,7 @@ class WebSocket(object):
             self.closed = True
         try:
             self._sock.close()
-        except socket.error:
+        except OSError:
             pass
 
 
@@ -322,7 +300,7 @@ class SSAPError(Exception):
     pass
 
 
-class SSAPClient(object):
+class SSAPClient:
     def __init__(self, ws):
         self._ws = ws
         self._counter = 0
@@ -421,16 +399,16 @@ def load_client_key(ip):
     try:
         with open(path, "r") as fh:
             return fh.read().strip()
-    except (IOError, OSError):
+    except OSError:
         return ""
 
 
 def save_client_key(ip, client_key):
     path = key_path(ip)
     directory = os.path.dirname(path)
-    if directory and not os.path.isdir(directory):
+    if directory:
         try:
-            os.makedirs(directory)
+            os.makedirs(directory, exist_ok=True)
         except OSError:
             pass
     try:
@@ -440,7 +418,7 @@ def save_client_key(ip, client_key):
             os.chmod(path, 0o600)
         except OSError:
             pass
-    except (IOError, OSError) as exc:
+    except OSError as exc:
         log("warning: could not save client key to %s (%s)" % (path, exc))
 
 
@@ -581,14 +559,12 @@ def guess_local_ip(target_host=None, local_ip_override=None):
 
 def _route_selected_local_ip(remote_ip, remote_port):
     """Ask the kernel route table which source IP it would pick."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        sock.connect((remote_ip, remote_port))
-        return sock.getsockname()[0]
-    except socket.error:
-        return None
-    finally:
-        sock.close()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        try:
+            sock.connect((remote_ip, remote_port))
+            return sock.getsockname()[0]
+        except OSError:
+            return None
 
 
 def required_files():
@@ -599,12 +575,6 @@ def resolve_wwwroot_path():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.join(script_dir, "wwwroot")
     return root_dir
-
-
-def _decode_embedded_data(encoded):
-    if not isinstance(encoded, bytes):
-        encoded = encoded.encode("ascii")
-    return base64.b64decode(encoded)
 
 
 def _embedded_meta_for(rel_path):
@@ -626,7 +596,7 @@ def _read_embedded_file(rel_path):
             "unsupported embedded encoding for %s: %s" % (rel_path, encoding)
         )
     payload = meta.get("data", "")
-    return _decode_embedded_data(payload)
+    return base64.b64decode(payload)
 
 
 def _read_filesystem_file(root_dir, rel_path):
@@ -705,7 +675,7 @@ def resolve_asset_root(asset_source, tracked_files):
     return dir_root, source_desc, allow_embedded_assets, allow_filesystem_fallback
 
 
-class RequestedFilesTracker(object):
+class RequestedFilesTracker:
     def __init__(self, tracked_files):
         self._tracked = set(tracked_files)
         self._seen = set()
@@ -742,18 +712,12 @@ def make_tracking_handler(
     allow_embedded_assets,
     allow_filesystem_fallback,
 ):
-    if SimpleHTTPRequestHandler is None:
-        raise RuntimeError("no stdlib HTTP request handler available")
-
     tracked = set(tracked_files)
 
     class TrackingHTTPRequestHandler(SimpleHTTPRequestHandler):
         def _requested_rel_path(self):
             raw_path = urlsplit(self.path).path
-            try:
-                raw_path = unquote(raw_path, errors="surrogatepass")
-            except TypeError:
-                raw_path = unquote(raw_path)
+            raw_path = unquote(raw_path, errors="surrogatepass")
             raw_path = posixpath.normpath(raw_path)
             if raw_path in ("", "/", "."):
                 return ENTRY_PAGE
@@ -820,18 +784,21 @@ def start_http_server(
         allow_embedded_assets,
         allow_filesystem_fallback,
     )
+    return _start_http_server(handler, bind_host, preferred_port)
+
+
+def _start_http_server(handler, bind_host, preferred_port):
     server = None
     for port in (preferred_port, 0):
         try:
             server = HTTPServer((bind_host, port), handler)
             break
-        except socket.error:
+        except OSError:
             server = None
     if server is None:
         raise RuntimeError("could not start local HTTP server")
 
-    thread = threading.Thread(target=server.serve_forever)
-    thread.daemon = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
 
@@ -856,7 +823,7 @@ def build_self_hosted_url(
 def _validate_ipv4_address(ip_text):
     try:
         socket.inet_aton(ip_text)
-    except socket.error:
+    except OSError:
         return False
     return ip_text.count(".") == 3
 
@@ -870,9 +837,6 @@ def make_test_connection_handler():
     Used only to prove that the TV (or any browser on the LAN) can reach this
     host over HTTP; it doesn't serve any real payload/exploit files.
     """
-    if BaseHTTPRequestHandler is None:
-        raise RuntimeError("no stdlib HTTP request handler available")
-
     body = TEST_CONNECTION_MESSAGE.encode("utf-8")
 
     class TestConnectionHandler(BaseHTTPRequestHandler):
@@ -890,28 +854,15 @@ def make_test_connection_handler():
         def do_HEAD(self):
             self._send_headers(False)
 
-        def log_message(self, fmt, *args):
-            log("request from %s: %s" % (self.client_address[0], fmt % args))
+        def log_message(self, format, *args):
+            log("request from %s: %s" % (self.client_address[0], format % args))
 
     return TestConnectionHandler
 
 
 def start_test_connection_server(bind_host="0.0.0.0", preferred_port=8080):
     handler = make_test_connection_handler()
-    server = None
-    for port in (preferred_port, 0):
-        try:
-            server = HTTPServer((bind_host, port), handler)
-            break
-        except socket.error:
-            server = None
-    if server is None:
-        raise RuntimeError("could not start local HTTP server")
-
-    thread = threading.Thread(target=server.serve_forever)
-    thread.daemon = True
-    thread.start()
-    return server
+    return _start_http_server(handler, bind_host, preferred_port)
 
 
 def run_test_connection(host=None, local_ip_override=None):
@@ -1114,7 +1065,7 @@ def run(
             port,
             secure=secure,
         )
-    except (socket.error, ssl.SSLError, WebSocketError) as exc:
+    except (OSError, WebSocketError) as exc:
         die("could not connect to TV: %s" % exc)
 
     client = SSAPClient(ws)
@@ -1179,160 +1130,71 @@ def run(
                 pass
 
 
-def usage(full=False):
-    print(
-        "usage: python %s [--debug] [--curl-insecure] "
-        "[--asset-source auto|dir|embedded] "
-        "[--local-ip <ipv4>] [--webos-version <version>] "
-        "[--test-server simple|payload] "
-        "[<tv-ip-or-host>]" % sys.argv[0]
-    )
-    if not full:
-        print("(use --help for more details)")
-        return
-    print(
-        "example: python %s --debug --asset-source auto "
-        "--local-ip 192.168.1.100 192.168.1.50" % sys.argv[0]
-    )
-    print(
-        "example: python %s --webos-version 6.5 192.168.1.50  "
-        "(skip querying the TV and use this webOS version instead)"
-        % sys.argv[0]
-    )
-    print(
-        "example: python %s --test-server simple  "
-        "(minimal HTTP connectivity check; no payload served; "
-        "<tv-ip-or-host> recommended)" % sys.argv[0]
-    )
-    print(
-        "example: python %s --test-server payload 192.168.1.50  "
-        "(serves the payload/exploit files and prints the URL for manual "
-        "testing; <tv-ip-or-host> recommended)" % sys.argv[0]
-    )
-
-
 def main(argv=None):
-    argv = argv if argv is not None else sys.argv[1:]
-    debug = False
-    curl_insecure = False
-    asset_source = ASSET_SOURCE_AUTO
-    local_ip_override = None
-    webos_version_override = None
-    test_server_mode = None
-    positional = []
-    index = 0
+    parser = argparse.ArgumentParser(
+        description="Pair with an LG webOS TV and launch a self-hosted payload page.",
+        add_help=False,
+    )
+    parser.add_argument(
+        "-h", "--help", "-?", action="help",
+        help="show this help message and exit",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="enable payload debug output",
+    )
+    parser.add_argument(
+        "--curl-insecure", action="store_true",
+        help="disable curl TLS certificate verification for payload downloads",
+    )
+    parser.add_argument(
+        "--asset-source", choices=ASSET_SOURCES, default=ASSET_SOURCE_AUTO,
+        help="asset location (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--local-ip", metavar="<ipv4>",
+        help="override the advertised local IPv4 address",
+    )
+    parser.add_argument(
+        "--webos-version", metavar="<version>",
+        help="limit target apps by webOS version (e.g. 6.5); not auto-detected",
+    )
+    parser.add_argument(
+        "--test-server", choices=TEST_SERVER_MODES,
+        help="serve a connectivity response (simple) or payload without pairing",
+    )
+    parser.add_argument(
+        "host", nargs="?", metavar="<tv-ip-or-host>",
+        help="TV address (required except in test-server modes; recommended there)",
+    )
+    args = parser.parse_args(argv)
+    if args.local_ip is not None and not _validate_ipv4_address(args.local_ip):
+        parser.error("invalid --local-ip value '%s'" % args.local_ip)
+    if args.webos_version is not None and not args.webos_version.strip():
+        parser.error("--webos-version value must not be empty")
+    if args.test_server is None and args.host is None:
+        parser.error("<tv-ip-or-host> is required unless --test-server is used")
 
-    # No argparse :(
-    while index < len(argv):
-        arg = argv[index]
-        if arg in ("--help", "-h", "-?"):
-            usage(full=True)
-            return 0
-        elif arg == "--debug":
-            debug = True
-            index += 1
-        elif arg == "--curl-insecure":
-            curl_insecure = True
-            index += 1
-        elif arg == "--test-server":
-            if index + 1 >= len(argv):
-                print("error: missing value for --test-server")
-                usage()
-                return 2
-            test_server_mode = argv[index + 1]
-            index += 2
-        elif arg.startswith("--test-server="):
-            test_server_mode = arg.split("=", 1)[1]
-            index += 1
-        elif arg == "--local-ip":
-            if index + 1 >= len(argv):
-                print("error: missing value for --local-ip")
-                usage()
-                return 2
-            local_ip_override = argv[index + 1]
-            index += 2
-        elif arg.startswith("--local-ip="):
-            local_ip_override = arg.split("=", 1)[1]
-            index += 1
-        elif arg == "--webos-version":
-            if index + 1 >= len(argv):
-                print("error: missing value for --webos-version")
-                usage()
-                return 2
-            webos_version_override = argv[index + 1]
-            index += 2
-        elif arg.startswith("--webos-version="):
-            webos_version_override = arg.split("=", 1)[1]
-            index += 1
-        elif arg == "--asset-source":
-            if index + 1 >= len(argv):
-                print("error: missing value for --asset-source")
-                usage()
-                return 2
-            asset_source = argv[index + 1]
-            index += 2
-        elif arg.startswith("--asset-source="):
-            asset_source = arg.split("=", 1)[1]
-            index += 1
-        elif arg.startswith("-"):
-            print("error: unknown option %s" % arg)
-            usage()
-            return 2
-        else:
-            positional.append(arg)
-            index += 1
-
-    if asset_source not in ASSET_SOURCES:
-        print("error: invalid --asset-source value '%s'" % asset_source)
-        usage()
-        return 2
-
-    if test_server_mode is not None and test_server_mode not in TEST_SERVER_MODES:
-        print("error: invalid --test-server value '%s'" % test_server_mode)
-        usage()
-        return 2
-
-    if local_ip_override and not _validate_ipv4_address(local_ip_override):
-        print("error: invalid --local-ip value '%s'" % local_ip_override)
-        usage()
-        return 2
-
-    if webos_version_override is not None and not webos_version_override.strip():
-        print("error: --webos-version value must not be empty")
-        usage()
-        return 2
-
-    if len(positional) > 1:
-        print("error: too many arguments")
-        usage()
-        return 2
-
-    if test_server_mode is None and not positional:
-        usage()
-        return 2
-
-    host = positional[0] if positional else None
-    if test_server_mode == TEST_SERVER_SIMPLE:
+    if args.test_server == TEST_SERVER_SIMPLE:
         run_test_connection(
-            host,
-            local_ip_override=local_ip_override,
+            args.host,
+            local_ip_override=args.local_ip,
         )
-    elif test_server_mode == TEST_SERVER_PAYLOAD:
+    elif args.test_server == TEST_SERVER_PAYLOAD:
         run_test_payload(
-            host,
-            debug=debug,
-            asset_source=asset_source,
-            local_ip_override=local_ip_override,
-            curl_insecure=curl_insecure,
+            args.host,
+            debug=args.debug,
+            asset_source=args.asset_source,
+            local_ip_override=args.local_ip,
+            curl_insecure=args.curl_insecure,
         )
     else:
         run(
-            host,
-            debug=debug,
-            asset_source=asset_source,
-            local_ip_override=local_ip_override,
-            webos_version_override=webos_version_override,
-            curl_insecure=curl_insecure,
+            args.host,
+            debug=args.debug,
+            asset_source=args.asset_source,
+            local_ip_override=args.local_ip,
+            webos_version_override=args.webos_version,
+            curl_insecure=args.curl_insecure,
         )
     return 0
 
