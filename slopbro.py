@@ -74,6 +74,9 @@ TEST_SERVER_SIMPLE = "simple"
 TEST_SERVER_PAYLOAD = "payload"
 TEST_SERVER_MODES = (TEST_SERVER_SIMPLE, TEST_SERVER_PAYLOAD)
 
+# Should exist on all targeted webOS versions.
+DEFAULT_FAKE_SERVICE_PATH = "/usr/palm/services/com.palm.service.devmode"
+
 # --- BEGIN EMBEDDED WWWROOT ---
 EMBEDDED_WWWROOT = {}
 # --- END EMBEDDED WWWROOT ---
@@ -809,6 +812,7 @@ def build_self_hosted_url(
     debug=False,
     local_ip_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     local_ip = local_ip_override or local_ip_for_remote(tv_host)
     url = "http://%s:%d/%s" % (local_ip, server_port, ENTRY_PAGE)
@@ -817,6 +821,8 @@ def build_self_hosted_url(
         url += "&debug"
     if curl_insecure:
         url += "&curl-insecure"
+    if fake_service_path:
+        url += "&fake-service-path=%s" % fake_service_path
     return url
 
 
@@ -918,6 +924,7 @@ def run_test_payload(
     asset_source=ASSET_SOURCE_AUTO,
     local_ip_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     """Serve the payload page and print its URL without pairing/launching.
 
@@ -967,6 +974,7 @@ def run_test_payload(
             debug=debug,
             curl_insecure=curl_insecure,
             local_ip_override=local_ip,
+            fake_service_path=fake_service_path,
         )
     except Exception as exc:
         die("could not start self-hosted page server: %s" % exc)
@@ -1003,6 +1011,7 @@ def run(
     local_ip_override=None,
     webos_version_override=None,
     curl_insecure=False,
+    fake_service_path=DEFAULT_FAKE_SERVICE_PATH,
 ):
     secure = True
     port = PORT_TLS if secure else PORT_PLAIN
@@ -1054,6 +1063,7 @@ def run(
             debug=debug,
             curl_insecure=curl_insecure,
             local_ip_override=local_ip_override,
+            fake_service_path=fake_service_path,
         )
     except Exception as exc:
         die("could not start self-hosted page server: %s" % exc)
@@ -1130,6 +1140,12 @@ def run(
                 pass
 
 
+def _fake_service_path_arg(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("value must not be empty")
+    return value
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Pair with an LG webOS TV and launch a self-hosted payload page.",
@@ -1145,6 +1161,16 @@ def main(argv=None):
     parser.add_argument(
         "--curl-insecure", action="store_true",
         help="disable curl TLS certificate verification for payload downloads",
+    )
+    parser.add_argument(
+        "--fake-service-path", metavar="<path>",
+        default=DEFAULT_FAKE_SERVICE_PATH, type=_fake_service_path_arg,
+        help="fake service path used to bypass the service launch patch",
+    )
+    parser.add_argument(
+        "--no-fake-service-path", dest="fake_service_path",
+        action="store_const", const="",
+        help="disable the fake service path bypass",
     )
     parser.add_argument(
         "--asset-source", choices=ASSET_SOURCES, default=ASSET_SOURCE_AUTO,
@@ -1186,6 +1212,7 @@ def main(argv=None):
             asset_source=args.asset_source,
             local_ip_override=args.local_ip,
             curl_insecure=args.curl_insecure,
+            fake_service_path=args.fake_service_path,
         )
     else:
         run(
@@ -1195,6 +1222,7 @@ def main(argv=None):
             local_ip_override=args.local_ip,
             webos_version_override=args.webos_version,
             curl_insecure=args.curl_insecure,
+            fake_service_path=args.fake_service_path,
         )
     return 0
 

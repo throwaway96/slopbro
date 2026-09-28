@@ -21,9 +21,9 @@ anyway. The script still uses only the standard library.
 I've only lightly tested it (remember: slop!), but people have gotten it
 to work on a bunch of webOS versions.
 
-SlopBro has been used successfully against webOS 6 (including 6.5.3) and
-7–10 (22–25) and can probably also exploit webOS 5. (While it could possibly
-work all the way back to webOS 3.4.2, I recommend using
+SlopBro has been used successfully against webOS 4–11 and now includes
+a workaround for LG's attempt to patch the jsserver vulnerability.
+(While it might work all the way back to webOS 3.4.2, I recommend using
 [dejavuln-autoroot](https://github.com/throwaway96/dejavuln-autoroot) for
 webOS 3.5 and 4.x.)
 
@@ -52,7 +52,7 @@ which is executed with root privileges. It is responsible for launching
 Run the script with Python 3, passing the IP address of your TV:
 
 ```bash
-python3 slopbro.py [--debug] [--curl-insecure] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
+python slopbro.py [--debug] [--curl-insecure] [--fake-service-path <PATH>|--no-fake-service-path] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]
 ```
 
 Use `python3 slopbro.py --help` for the full option reference.
@@ -68,6 +68,11 @@ The `--debug` option enables extra output on the TV screen as well as in
 The `--curl-insecure` option passes `-k` to `curl` when downloading Homebrew
 Channel, disabling TLS certificate verification. Use it only when necessary
 (e.g., when your TV does not have the correct date due to SDP being blocked).
+
+The `--fake-service-path` option specifies the fake service path used to
+bypass the service launch patch. It defaults to
+`/usr/palm/services/com.palm.service.devmode`. Use `--no-fake-service-path` to
+disable the bypass and omit the `fake-service-path` query parameter.
 
 The `--local-ip` option allows you to specify the local IP address manually,
 which can be useful if the script guesses the wrong IP address.

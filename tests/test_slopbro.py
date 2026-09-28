@@ -21,7 +21,7 @@ class CommandLineTests(unittest.TestCase):
         self.runners["run"].assert_called_once_with(
             "tv.local", debug=False, asset_source="auto",
             local_ip_override=None, webos_version_override=None,
-            curl_insecure=False,
+            curl_insecure=False, fake_service_path=slopbro.DEFAULT_FAKE_SERVICE_PATH,
         )
         self.runners["run_test_connection"].assert_not_called()
         self.runners["run_test_payload"].assert_not_called()
@@ -39,8 +39,25 @@ class CommandLineTests(unittest.TestCase):
             self.runners["run"].assert_called_with(
                 "tv.local", debug=True, asset_source="dir",
                 local_ip_override="192.168.1.2", webos_version_override="6.5",
-                curl_insecure=True,
+                curl_insecure=True, fake_service_path=slopbro.DEFAULT_FAKE_SERVICE_PATH,
             )
+
+    def test_fake_service_path_options(self):
+        for argv, expected in (
+            (["--fake-service-path", "/custom/service"], "/custom/service"),
+            (["--fake-service-path=/custom/service"], "/custom/service"),
+            (["--no-fake-service-path"], ""),
+            (["--fake-service-path=/custom/service", "--no-fake-service-path"], ""),
+            (["--no-fake-service-path", "--fake-service-path=/custom/service"], "/custom/service"),
+        ):
+            with self.subTest(argv=argv):
+                self.assertEqual(slopbro.main(argv + ["tv.local"]), 0)
+                self.assertEqual(self.runners["run"].call_args.kwargs["fake_service_path"], expected)
+
+        self.assertEqual(slopbro.main([
+            "--test-server=payload", "--no-fake-service-path",
+        ]), 0)
+        self.assertEqual(self.runners["run_test_payload"].call_args.kwargs["fake_service_path"], "")
 
     def test_test_server_modes(self):
         for host in (None, "tv.local"):
@@ -56,6 +73,7 @@ class CommandLineTests(unittest.TestCase):
             self.runners["run_test_payload"].assert_called_with(
                 host, debug=True, asset_source="embedded",
                 local_ip_override="192.168.1.2", curl_insecure=True,
+                fake_service_path=slopbro.DEFAULT_FAKE_SERVICE_PATH,
             )
         self.runners["run"].assert_not_called()
 
@@ -66,6 +84,7 @@ class CommandLineTests(unittest.TestCase):
                     slopbro.main([option])
             self.assertEqual(caught.exception.code, 0)
             self.assertIn("--test-server", output.getvalue())
+            self.assertIn("--no-fake-service-path", output.getvalue())
         for runner in self.runners.values():
             runner.assert_not_called()
 
@@ -75,9 +94,12 @@ class CommandLineTests(unittest.TestCase):
             ["--asset-source=bad", "tv"], ["--test-server=bad"],
             ["--local-ip=bad", "tv"], ["--local-ip=", "tv"],
             ["--webos-version=", "tv"], ["--webos-version", " ", "tv"],
+            ["--fake-service-path=", "tv"],
+            ["--fake-service-path", " ", "tv"],
         ]
         invalid.extend([[option] for option in (
             "--local-ip", "--webos-version", "--asset-source", "--test-server",
+            "--fake-service-path",
         )])
         for argv in invalid:
             with patch("sys.stderr", new_callable=io.StringIO) as output:
