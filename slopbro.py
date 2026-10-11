@@ -764,8 +764,16 @@ def make_tracking_handler(
                 self.send_error(404, "File not found")
                 return None
 
-            self._mark_served_file(rel_path)
             return self._send_bytes(rel_path, data)
+
+        def do_GET(self):
+            """Serve a GET and track it only after the body has been copied."""
+            rel_path = self._requested_rel_path()
+            f = self.send_head()
+            if f:
+                with f:
+                    self.copyfile(f, self.wfile)
+                self._mark_served_file(rel_path)
 
     return TrackingHTTPRequestHandler
 
