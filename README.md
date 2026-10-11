@@ -49,7 +49,7 @@ which is executed with root privileges. It is responsible for launching
 
 ## Running
 
-Run the script with Python 3, passing the IP address of your TV:
+Run the script with Python 3.8 or newer, passing the IP address of your TV:
 
 ```bash
 python slopbro.py [--debug] [--curl-insecure] [--fake-service-path <PATH>|--no-fake-service-path] [--local-ip <LOCAL IP>] [--webos-version <VERSION>] [--asset-source <auto|dir|embedded>] [--test-server <simple|payload>] [<TV IP ADDRESS>]

@@ -10,8 +10,8 @@
 slopbro.py - Connect to an LG webOS TV over SSAP, pair, and
 launch various apps with a self-hosted payload page.
 
-Single file, standard library only. Requires Python 3 and should be run on
-a PC on the same LAN as the TV.
+Single file, standard library only. Requires Python 3.8 or newer and should be
+run on a PC on the same LAN as the TV.
 
 Example:
     python3 slopbro.py 192.168.1.50
