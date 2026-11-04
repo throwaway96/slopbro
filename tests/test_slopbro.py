@@ -117,6 +117,37 @@ class CommandLineTests(unittest.TestCase):
 
 
 class HandlerTests(unittest.TestCase):
+    def _make_tracking_handler(
+        self,
+        path,
+        tracker=None,
+        tracked_files=("index.html",),
+        root_dir=None,
+        allow_embedded_assets=True,
+        allow_filesystem_fallback=False,
+    ):
+        tracker = tracker or Mock()
+        handler_class = slopbro.make_tracking_handler(
+            root_dir,
+            tracker,
+            tracked_files,
+            allow_embedded_assets,
+            allow_filesystem_fallback,
+        )
+        handler = object.__new__(handler_class)
+        handler.path = path
+        handler.wfile = io.BytesIO()
+        handler.statuses = []
+        handler.headers = []
+        handler.errors = []
+        handler.send_response = lambda status, *args: handler.statuses.append(status)
+        handler.send_header = lambda name, value: handler.headers.append((name, value))
+        handler.end_headers = lambda: None
+        handler.send_error = lambda status, message=None, *args: (
+            handler.errors.append((status, message))
+        )
+        return handler, tracker
+
     def test_server_startup(self):
         for mode in ("payload", "simple"):
             for failed_attempts in (0, 1, 2):
@@ -151,6 +182,212 @@ class HandlerTests(unittest.TestCase):
                     self.assertEqual(factory.call_args_list, [
                         call(("127.0.0.1", port), handler) for port in ports
                     ])
+
+    def test_get_marks_only_after_source_is_closed(self):
+        source = io.BytesIO(b"payload")
+        handler, tracker = self._make_tracking_handler("/index.html")
+        handler._send_bytes = lambda rel_path, data: source
+        tracker.mark_seen.side_effect = lambda rel_path: (
+            self.assertTrue(source.closed),
+            (True, 1, 1),
+        )[1]
+
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"payload"):
+            with patch.object(slopbro, "log") as logger:
+                handler.do_GET()
+
+        self.assertEqual(handler.wfile.getvalue(), b"payload")
+        tracker.mark_seen.assert_called_once_with("index.html")
+        logger.assert_called_once()
+
+    def test_get_failure_closes_source_and_can_be_retried(self):
+        tracker = slopbro.RequestedFilesTracker(["index.html"])
+        handler, _ = self._make_tracking_handler("/index.html", tracker=tracker)
+        sources = []
+        original_send_bytes = handler._send_bytes
+
+        def send_bytes(rel_path, data):
+            source = original_send_bytes(rel_path, data)
+            sources.append(source)
+            return source
+
+        handler._send_bytes = send_bytes
+
+        def interrupted_copy(source, destination):
+            raise OSError("client disconnected")
+
+        handler.copyfile = interrupted_copy
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"payload"):
+            with self.assertRaisesRegex(OSError, "client disconnected"):
+                handler.do_GET()
+            self.assertTrue(sources[0].closed)
+            self.assertEqual(tracker.missing_files(), ["index.html"])
+            handler.copyfile = lambda source, destination: destination.write(b"payload")
+            with patch.object(slopbro, "log") as logger:
+                handler.do_GET()
+                handler.do_GET()
+
+            self.assertEqual(handler.wfile.getvalue(), b"payloadpayload")
+            self.assertTrue(all(source.closed for source in sources))
+            self.assertEqual(tracker.missing_files(), [])
+            self.assertEqual(logger.call_count, 1)
+
+    def test_get_close_failure_does_not_mark_file(self):
+        class CloseFailingBytesIO(io.BytesIO):
+            def close(self):
+                super().close()
+                raise OSError("close failed")
+
+        source = CloseFailingBytesIO(b"payload")
+        tracker = slopbro.RequestedFilesTracker(["index.html"])
+        handler, _ = self._make_tracking_handler("/index.html", tracker=tracker)
+        handler._send_bytes = lambda rel_path, data: source
+
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"payload"):
+            with self.assertRaisesRegex(OSError, "close failed"):
+                handler.do_GET()
+
+        self.assertTrue(source.closed)
+        self.assertEqual(tracker.missing_files(), ["index.html"])
+
+    def test_head_uses_inherited_handler_without_tracking(self):
+        self.assertNotIn(
+            "do_HEAD",
+            slopbro.make_tracking_handler(None, Mock(), ["index.html"], True, False).__dict__,
+        )
+        get_tracker = slopbro.RequestedFilesTracker(["index.html"])
+        get_handler, _ = self._make_tracking_handler(
+            "/index.html", tracker=get_tracker,
+        )
+        tracker = slopbro.RequestedFilesTracker(["index.html"])
+        head_handler, _ = self._make_tracking_handler(
+            "/index.html", tracker=tracker,
+        )
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"payload"):
+            get_handler.do_GET()
+            head_handler.do_HEAD()
+
+        self.assertEqual(head_handler.statuses, get_handler.statuses)
+        self.assertEqual(head_handler.headers, get_handler.headers)
+        self.assertEqual(head_handler.wfile.getvalue(), b"")
+        self.assertEqual(get_tracker.missing_files(), [])
+        self.assertEqual(tracker.missing_files(), ["index.html"])
+
+    def test_send_head_does_not_mark_file(self):
+        handler, tracker = self._make_tracking_handler("/index.html")
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"payload"):
+            source = handler.send_head()
+
+        self.assertEqual(source.read(), b"payload")
+        self.assertEqual(handler.statuses, [200])
+        self.assertEqual(dict(handler.headers)["Content-Length"], "7")
+        tracker.mark_seen.assert_not_called()
+        source.close()
+
+    def test_routes_preserve_sources_allowlist_and_missing_assets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with open(os.path.join(directory, "index.html"), "wb") as asset:
+                asset.write(b"directory")
+            with open(os.path.join(directory, "other.txt"), "wb") as asset:
+                asset.write(b"untracked")
+            embedded = {"index.html": b"embedded"}
+
+            with patch.object(
+                slopbro, "_read_embedded_file", side_effect=embedded.get,
+            ) as read_embedded:
+                directory_handler, _ = self._make_tracking_handler(
+                    "/index.html?cache=1",
+                    root_dir=directory,
+                    allow_embedded_assets=False,
+                    allow_filesystem_fallback=True,
+                )
+                self.assertEqual(directory_handler.send_head().read(), b"directory")
+                read_embedded.assert_not_called()
+
+                embedded_handler, _ = self._make_tracking_handler(
+                    "/",
+                    root_dir=directory,
+                    allow_embedded_assets=True,
+                    allow_filesystem_fallback=False,
+                )
+                self.assertEqual(embedded_handler.send_head().read(), b"embedded")
+                self.assertEqual(embedded_handler.statuses, [200])
+
+                auto_handler, _ = self._make_tracking_handler(
+                    "/index%2Ehtml?debug",
+                    root_dir=directory,
+                    allow_embedded_assets=True,
+                    allow_filesystem_fallback=True,
+                )
+                self.assertEqual(auto_handler.send_head().read(), b"embedded")
+
+                read_embedded.side_effect = lambda rel_path: None
+                fallback_handler, _ = self._make_tracking_handler(
+                    "/index.html",
+                    root_dir=directory,
+                    allow_embedded_assets=True,
+                    allow_filesystem_fallback=True,
+                )
+                self.assertEqual(fallback_handler.send_head().read(), b"directory")
+
+                missing_tracker = slopbro.RequestedFilesTracker(["index.html"])
+                embedded_missing, _ = self._make_tracking_handler(
+                    "/index.html",
+                    tracker=missing_tracker,
+                    root_dir=directory,
+                    allow_embedded_assets=True,
+                    allow_filesystem_fallback=False,
+                )
+                embedded_missing.do_GET()
+                self.assertEqual(embedded_missing.errors[0][0], 404)
+                self.assertEqual(missing_tracker.missing_files(), ["index.html"])
+
+            untracked, tracker = self._make_tracking_handler(
+                "/other.txt",
+                tracker=Mock(),
+                tracked_files=("index.html",),
+                root_dir=directory,
+                allow_embedded_assets=False,
+                allow_filesystem_fallback=True,
+            )
+            untracked.do_GET()
+            self.assertEqual(untracked.errors[0][0], 404)
+            tracker.mark_seen.assert_not_called()
+
+    def test_payload_response_headers_include_mime_and_length(self):
+        handler, _ = self._make_tracking_handler(
+            "/main.js", tracked_files=("main.js",),
+        )
+        with patch.object(slopbro, "_read_embedded_file", return_value=b"let x = 1;"):
+            source = handler.send_head()
+
+        self.assertEqual(handler.statuses, [200])
+        self.assertEqual(dict(handler.headers)["Content-Length"], "10")
+        self.assertIn("javascript", dict(handler.headers)["Content-type"])
+        self.assertEqual(source.read(), b"let x = 1;")
+        source.close()
+
+    def test_simple_server_get_and_head_responses(self):
+        handler_class = slopbro.make_test_connection_handler()
+        get_handler = object.__new__(handler_class)
+        head_handler = object.__new__(handler_class)
+        for handler in (get_handler, head_handler):
+            handler.wfile = io.BytesIO()
+            handler.statuses = []
+            handler.headers = []
+            handler.send_response = lambda status, *args, h=handler: h.statuses.append(status)
+            handler.send_header = lambda name, value, h=handler: h.headers.append((name, value))
+            handler.end_headers = lambda: None
+
+        get_handler.do_GET()
+        head_handler.do_HEAD()
+
+        expected_length = str(len(slopbro.TEST_CONNECTION_MESSAGE.encode("utf-8")))
+        self.assertEqual(get_handler.wfile.getvalue(), slopbro.TEST_CONNECTION_MESSAGE.encode("utf-8"))
+        self.assertEqual(head_handler.wfile.getvalue(), b"")
+        self.assertEqual(head_handler.statuses, get_handler.statuses)
+        self.assertEqual(head_handler.headers, get_handler.headers)
+        self.assertEqual(dict(head_handler.headers)["Content-Length"], expected_length)
 
     def test_requested_paths(self):
         handler_class = slopbro.make_tracking_handler(
