@@ -1,0 +1,17 @@
+name: Report an issue
+description: Report a problem, not firmware-specific success or failure.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!IMPORTANT]
+        > Please do not open an issue just to report whether or not SlopBro works on
+        > a specific firmware version. Reports of success or failure on particular
+        > firmware versions are not needed.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the issue you want to report.
+    validations:
+      required: true

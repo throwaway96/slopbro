@@ -1,31 +1,35 @@
 # SlopBro
 
-Some of the Python was written by an LLM. (You think I wanted to write a
-Python 2.7/3.x-compatible WebSocket client?) The rest is good, old-fashioned
-**human** slop. It's the spirit of the times, you know?
+## Status
+
+> [!IMPORTANT]
+> SlopBro is not expected to work on webOS 10 and 11 firmware released since
+> about 2026-10-10.
+
+LG finally actually fixed the jsserver vulnerability in webOS 10 and 11
+around 10 October 2026.
+
+SlopBro has been used successfully against webOS 4–11 and includes
+a workaround for LG's initial attempt to patch the jsserver vulnerability.
+(While it might work all the way back to webOS 3.4.2, I recommend using
+[dejavuln-autoroot](https://github.com/throwaway96/dejavuln-autoroot) for
+webOS 3.5 and 4.x.)
+
+> [!IMPORTANT]
+> Please do not open an issue just to report whether or not SlopBro works on
+> a specific firmware version.
+
+If you're not sure whether your firmware is vulnerable, just try it. A failed
+attempt is not going to harm your TV.
 
 ## Overview
 
 SlopBro is a proof-of-concept exploit for the jsserver vulnerability in
 LG TVs.
 
-~~I tried to make it compatible with Python 2.7 and 3.x with no dependencies
-outside the standard library so that it could be run on all versions of
-webOS TV. Unfortunately, the Python 2.7 environment on webOS 6 (and
-presumably older) is missing the HTTP server stuff, so it was kind of a
-waste of time. Oh well.~~
-
-Python 2 support has now been dropped. SSAP never worked right via loopback
-anyway. The script still uses only the standard library.
-
-I've only lightly tested it (remember: slop!), but people have gotten it
-to work on a bunch of webOS versions.
-
-SlopBro has been used successfully against webOS 4–11 and now includes
-a workaround for LG's attempt to patch the jsserver vulnerability.
-(While it might work all the way back to webOS 3.4.2, I recommend using
-[dejavuln-autoroot](https://github.com/throwaway96/dejavuln-autoroot) for
-webOS 3.5 and 4.x.)
+Some of the Python was written by an LLM. (You think I wanted to write a
+Python 2.7/3.x-compatible WebSocket client?) The rest is good, old-fashioned
+**human** slop. It's the spirit of the times, you know?
 
 ### How it works
 
